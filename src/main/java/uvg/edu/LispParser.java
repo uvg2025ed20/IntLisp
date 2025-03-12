@@ -45,7 +45,10 @@ public class LispParser {
                 return add(expression.subList(1, expression.size()));  // Operación de suma
             case "-":
                 return subtract(expression.subList(1, expression.size()));  // Operación de resta
-            
+            case "*":
+                return multiply(expression.subList(1, expression.size()));  // Operación de multiplicación  
+            case "/":
+                return divide(expression.subList(1, expression.size()));  // Operación de división
             default:
                 throw new RuntimeException("Operador desconocido: " + operator);
         }
@@ -63,6 +66,22 @@ public class LispParser {
         int result = (Integer) operands.get(0);
         for (int i = 1; i < operands.size(); i++) {
             result -= (Integer) operands.get(i);
+        }
+        return result;
+    }
+
+    private int multiply(List<Object> operands) {
+        int result = 1;
+        for (Object operand : operands) {
+            result *= (Integer) operand;
+        }
+        return result;
+    }
+
+    private int divide(List<Object> operands) {
+        int result = (Integer) operands.get(0);
+        for (int i = 1; i < operands.size(); i++) {
+            result /= (Integer) operands.get(i);
         }
         return result;
     }
