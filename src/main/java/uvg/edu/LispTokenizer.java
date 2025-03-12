@@ -28,7 +28,7 @@ public class LispTokenizer {
                 position++;
             } else if (Character.isDigit(current) || (current == '-' && peekNextIsDigit())) {
                 tokens.add(readNumber());
-            } else if (Character.isLetter(current) || current == '+' || current == '-') {
+            } else if (Character.isLetter(current) || current == '+' || current == '-' || current == '*' || current == '/') {
                 tokens.add(readSymbol());
             } else {
                 throw new RuntimeException("Carácter inesperado: " + current);
