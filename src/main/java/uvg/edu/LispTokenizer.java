@@ -14,10 +14,8 @@ public class LispTokenizer {
 
     public List<Token> tokenize() {
         List<Token> tokens = new ArrayList<>();
-
         while (position < input.length()) {
             char current = input.charAt(position);
-
             if (Character.isWhitespace(current)) {
                 position++;
             } else if (current == '(') {
@@ -26,15 +24,17 @@ public class LispTokenizer {
             } else if (current == ')') {
                 tokens.add(new Token(TokenType.RPAREN, ")"));
                 position++;
+            } else if (current == '\'') {
+                tokens.add(new Token(TokenType.QUOTE, "'"));
+                position++;
             } else if (Character.isDigit(current) || (current == '-' && peekNextIsDigit())) {
                 tokens.add(readNumber());
-            } else if (Character.isLetter(current) || current == '+' || current == '-' || current == '*' || current == '/') {
+            } else if (Character.isLetter(current) || "+-*/".indexOf(current) != -1) {
                 tokens.add(readSymbol());
             } else {
                 throw new RuntimeException("Carácter inesperado: " + current);
             }
         }
-
         tokens.add(new Token(TokenType.EOF, ""));
         return tokens;
     }

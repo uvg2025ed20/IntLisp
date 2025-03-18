@@ -7,9 +7,10 @@ public class LispRunner {
     public static void main(String[] args) {
         System.out.println("Bienvenido al intérprete de Lisp en Java.");
         Scanner scanner = new Scanner(System.in);
+        ExecutionContext context = new ExecutionContext();
 
         while (true) {
-            System.out.print("\nIngrese una expresión Lisp (o escriba 'salir' para terminar): ");
+            System.out.print("\nIngrese una expresión Lisp (o 'salir' para terminar): ");
             String input = scanner.nextLine();
 
             if (input.equalsIgnoreCase("salir")) {
@@ -20,18 +21,11 @@ public class LispRunner {
             LispTokenizer tokenizer = new LispTokenizer(input);
             List<Token> tokens = tokenizer.tokenize();
 
-            System.out.println("Tokens generados:");
-            for (Token token : tokens) {
-                System.out.println(token);
-            }
+            LispParser parser = new LispParser(tokens, context);
+            Object result = parser.parse();
 
-            LispParser parser = new LispParser(tokens);
-            Object parsedExpression = parser.parse();
-
-            System.out.println("Estructura parseada:");
-            System.out.println(parsedExpression);
+            System.out.println("Resultado: " + result);
         }
-
         scanner.close();
     }
 }
