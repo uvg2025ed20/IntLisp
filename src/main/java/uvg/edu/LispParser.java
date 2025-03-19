@@ -41,9 +41,12 @@ public class LispParser {
             return (value != null) ? value : token.getValue();
         } else if (token.getType() == TokenType.NUMBER) {
             return Integer.parseInt(token.getValue());
+        } else if (token.getType() == TokenType.STRING) { 
+            return token.getValue();
         }
         return null;
     }
+    
 
     private Object evaluate(List<Object> expression) {
         if (expression.isEmpty()) return null;
@@ -195,19 +198,20 @@ public class LispParser {
     private Object cond(List<Object> args) {
         for (Object clause : args) {
             if (!(clause instanceof List)) {
-                throw new RuntimeException("Esto debe ser lista...");
+                throw new RuntimeException("Debe ser lista...");
             }
     
             List<Object> condPair = (List<Object>) clause;
             if (condPair.size() < 2) {
-                throw new RuntimeException("se necesita una condición y resultado");
+                throw new RuntimeException("se necesita una condición y el resultado");
             }
     
             Object condition = condPair.get(0);
     
+
             if (condition instanceof String && ((String) condition).equalsIgnoreCase("T")) {
                 Object action = condPair.get(1);
-                return action; 
+                return action;
             }
     
             Object evalResult;
@@ -223,7 +227,15 @@ public class LispParser {
     
             if (evalResult instanceof Boolean && (Boolean) evalResult) {
                 Object action = condPair.get(1);
-                return action; 
+                if (action instanceof String) {
+                    return action;
+                }
+
+                if (action instanceof List) {
+                    LispParser actionParser = new LispParser(tokensFromList((List<Object>) action), context);
+                    return actionParser.parse();
+                }
+                return action;
             }
         }
         return null;
