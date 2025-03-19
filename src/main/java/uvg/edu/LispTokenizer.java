@@ -27,9 +27,11 @@ public class LispTokenizer {
             } else if (current == '\'') {
                 tokens.add(new Token(TokenType.QUOTE, "'"));
                 position++;
+            } else if (current == '"') { // aquí añadí para las cadenas de texto
+                tokens.add(readString());
             } else if (Character.isDigit(current) || (current == '-' && peekNextIsDigit())) {
                 tokens.add(readNumber());
-            } else if (Character.isLetter(current) || "+-*/".indexOf(current) != -1) {
+            } else if (Character.isLetter(current) || "+-*/<>".indexOf(current) != -1) {
                 tokens.add(readSymbol());
             } else {
                 throw new RuntimeException("Carácter inesperado: " + current);
@@ -54,9 +56,28 @@ public class LispTokenizer {
     private Token readSymbol() {
         int start = position;
         while (position < input.length() &&
-                (Character.isLetterOrDigit(input.charAt(position)) || "+-*/".indexOf(input.charAt(position)) != -1)) {
+                (Character.isLetterOrDigit(input.charAt(position)) || 
+                 "+-*/<>".indexOf(input.charAt(position)) != -1)) {
             position++;
         }
         return new Token(TokenType.SYMBOL, input.substring(start, position));
+    }
+
+    private Token readString() {
+        position++; 
+        int start = position; 
+    
+        while (position < input.length() && input.charAt(position) != '"') {
+            position++;
+        }
+    
+        if (position >= input.length()) {
+            throw new RuntimeException("Cadena de texto no cerrada");
+        }
+    
+        String value = input.substring(start, position);
+    
+        position++; 
+        return new Token(TokenType.STRING, value);
     }
 }

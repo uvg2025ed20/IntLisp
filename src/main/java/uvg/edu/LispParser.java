@@ -17,12 +17,24 @@ public class LispParser {
     public Object parse() {
         if (position >= tokens.size()) return null;
         Token token = tokens.get(position++);
+        
+        if (token.getType() == TokenType.QUOTE) {
+            Object quoted = parse();
+            return quoted;
+        }
+        
         if (token.getType() == TokenType.LPAREN) {
             List<Object> expression = new ArrayList<>();
             while (position < tokens.size() && tokens.get(position).getType() != TokenType.RPAREN) {
                 expression.add(parse());
             }
             position++;
+            
+            if (!expression.isEmpty() && expression.get(0) instanceof String && 
+                ((String)expression.get(0)).toUpperCase().equals("DEFUN")) {
+                return defun(expression.subList(1, expression.size()));
+            }
+            
             return evaluate(expression);
         } else if (token.getType() == TokenType.SYMBOL) {
             Object value = context.get(token.getValue());
@@ -47,9 +59,8 @@ public class LispParser {
                 case "-": return subtract(args);
                 case "*": return multiply(args);
                 case "/": return divide(args);
-                case "QUOTE": return args.get(0); // Retorna sin evaluar
+                case "QUOTE": return args.get(0);
                 case "SETQ": return setq(args);
-                case "DEFUN": return defun(args);
                 case "PRINT": return print(args);
                 case "ATOM": return atom(args);
                 case "LIST": return list(args);
@@ -58,8 +69,16 @@ public class LispParser {
                 case ">": return greaterThan(args);
                 case "COND": return cond(args);
                 default:
+                    Object varValue = context.get(op);
+                    if (varValue != null) {
+                        return varValue;
+                    }
+                    
                     LispFunction func = context.getFunction(op);
-                    if (func != null) return applyFunction(func, args);
+                    if (func != null) {
+                        return applyFunction(func, args);
+                    }
+                    
                     throw new RuntimeException("Operador desconocido: " + op);
             }
         }
@@ -94,9 +113,26 @@ public class LispParser {
     }
 
     private Object defun(List<Object> args) {
-        String funcName = (String) args.get(0);           // "FACT"
-        List<String> params = (List<String>) args.get(1); // ["N"]
-        List<Object> body = (List<Object>) args.get(2);   // (COND ...)
+        if (args.size() < 3) {
+            throw new RuntimeException("DEFUN requiere al menos nombre, parámetros y cuerpo");
+        }
+        
+        String funcName = (String) args.get(0);
+        List<String> params;
+        
+        if (args.get(1) instanceof List) {
+            params = new ArrayList<>();
+            for (Object param : (List<Object>) args.get(1)) {
+                if (param instanceof String) {
+                    params.add((String) param);
+                } else {
+                    throw new RuntimeException("Los parámetros deben ser símbolos");
+                }
+            }
+        } else {
+            throw new RuntimeException("La lista de parámetros debe ser una lista");
+        }
+        List<Object> body = new ArrayList<>(args.subList(2, args.size()));
         LispFunction function = new LispFunction(params, body);
         context.setFunction(funcName, function);
         return funcName;
@@ -106,13 +142,27 @@ public class LispParser {
         if (func.getParameters().size() != args.size()) {
             throw new RuntimeException("Número incorrecto de argumentos");
         }
-        ExecutionContext localContext = new ExecutionContext();
-        for (int i = 0; i < args.size(); i++) {
-            localContext.set(func.getParameters().get(i), args.get(i));
+    
+        ExecutionContext functionContext = new ExecutionContext(context);
+        
+        for (int i = 0; i < func.getParameters().size(); i++) {
+            Object arg = args.get(i);
+            if (arg instanceof List) {
+                LispParser argParser = new LispParser(tokensFromList((List<Object>) arg), context);
+                functionContext.set(func.getParameters().get(i), argParser.parse());
+            } else {
+                functionContext.set(func.getParameters().get(i), arg);
+            }
         }
-        LispParser localParser = new LispParser(tokensFromList(func.getBody()), localContext);
-        return localParser.parse();
+    
+        Object result = null;
+        for (Object expr : func.getBody()) {
+            LispParser bodyParser = new LispParser(
+                tokensFromList(expr instanceof List ? (List<Object>) expr : List.of(expr)),functionContext);
+        result = bodyParser.parse();
     }
+    return result;
+}
 
     private Object print(List<Object> args) {
         Object value = args.get(0);
@@ -144,19 +194,49 @@ public class LispParser {
 
     private Object cond(List<Object> args) {
         for (Object clause : args) {
+            if (!(clause instanceof List)) {
+                throw new RuntimeException("Las cláusulas de COND deben ser listas");
+            }
+    
             List<Object> condPair = (List<Object>) clause;
+            if (condPair.size() < 2) {
+                throw new RuntimeException("Las cláusulas de COND necesitan una condición y un resultado");
+            }
+    
             Object condition = condPair.get(0);
-            if (condition instanceof Boolean && (Boolean) condition) {
-                return condPair.get(1);
-            } else if (!(condition instanceof Boolean)) {
-                LispParser conditionParser = new LispParser(tokensFromList(List.of(condition)), context);
-                if ((Boolean) conditionParser.parse()) {
-                    LispParser actionParser = new LispParser(tokensFromList(List.of(condPair.get(1))), context);
+    
+            if (condition instanceof String && ((String) condition).equalsIgnoreCase("T")) {
+                Object action = condPair.get(1);
+                if (action instanceof List) {
+                    LispParser actionParser = new LispParser(tokensFromList((List<Object>) action), context);
                     return actionParser.parse();
+                } else {
+                    return action;
+                }
+            }
+    
+            Object evalResult;
+            if (condition instanceof Boolean) {
+                evalResult = condition;
+            } else if (condition instanceof List) {
+                LispParser conditionParser = new LispParser(tokensFromList((List<Object>) condition), context);
+                evalResult = conditionParser.parse();
+            } else {
+                Object value = context.get(condition.toString());
+                evalResult = (value != null) ? value : false;
+            }
+    
+            if (evalResult instanceof Boolean && (Boolean) evalResult) {
+                Object action = condPair.get(1);
+                if (action instanceof List) {
+                    LispParser actionParser = new LispParser(tokensFromList((List<Object>) action), context);
+                    return actionParser.parse();
+                } else {
+                    return action;
                 }
             }
         }
-        return null;
+        return null; 
     }
 
     private List<Token> tokensFromList(List<Object> list) {
