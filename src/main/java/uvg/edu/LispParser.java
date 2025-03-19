@@ -103,8 +103,14 @@ public class LispParser {
     }
 
     private int divide(List<Object> operands) {
-        int result = (Integer) operands.get(0);
-        for (int i = 1; i < operands.size(); i++) result /= (Integer) operands.get(i);
+        int result = (Integer) operands.get(0); 
+        for (int i = 1; i < operands.size(); i++) {
+            int divisor = (Integer) operands.get(i); 
+            if (divisor == 0) {
+                throw new RuntimeException("División por cero no permitida");
+            }
+            result /= divisor; 
+        }
         return result;
     }
 
