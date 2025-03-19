@@ -195,24 +195,19 @@ public class LispParser {
     private Object cond(List<Object> args) {
         for (Object clause : args) {
             if (!(clause instanceof List)) {
-                throw new RuntimeException("Las cláusulas de COND deben ser listas");
+                throw new RuntimeException("Esto debe ser lista...");
             }
     
             List<Object> condPair = (List<Object>) clause;
             if (condPair.size() < 2) {
-                throw new RuntimeException("Las cláusulas de COND necesitan una condición y un resultado");
+                throw new RuntimeException("se necesita una condición y resultado");
             }
     
             Object condition = condPair.get(0);
     
             if (condition instanceof String && ((String) condition).equalsIgnoreCase("T")) {
                 Object action = condPair.get(1);
-                if (action instanceof List) {
-                    LispParser actionParser = new LispParser(tokensFromList((List<Object>) action), context);
-                    return actionParser.parse();
-                } else {
-                    return action;
-                }
+                return action; 
             }
     
             Object evalResult;
@@ -228,23 +223,20 @@ public class LispParser {
     
             if (evalResult instanceof Boolean && (Boolean) evalResult) {
                 Object action = condPair.get(1);
-                if (action instanceof List) {
-                    LispParser actionParser = new LispParser(tokensFromList((List<Object>) action), context);
-                    return actionParser.parse();
-                } else {
-                    return action;
-                }
+                return action; 
             }
         }
-        return null; 
+        return null;
     }
 
     private List<Token> tokensFromList(List<Object> list) {
         List<Token> tokens = new ArrayList<>();
         for (Object obj : list) {
-            if (obj instanceof Integer) tokens.add(new Token(TokenType.NUMBER, obj.toString()));
-            else if (obj instanceof String) tokens.add(new Token(TokenType.SYMBOL, (String) obj));
-            else if (obj instanceof List) {
+            if (obj instanceof Integer) {
+                tokens.add(new Token(TokenType.NUMBER, obj.toString()));
+            } else if (obj instanceof String) {
+                tokens.add(new Token(TokenType.STRING, (String) obj)); 
+            } else if (obj instanceof List) {
                 tokens.add(new Token(TokenType.LPAREN, "("));
                 tokens.addAll(tokensFromList((List<Object>) obj));
                 tokens.add(new Token(TokenType.RPAREN, ")"));

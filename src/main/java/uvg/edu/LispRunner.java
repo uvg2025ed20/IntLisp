@@ -8,6 +8,7 @@ public class LispRunner {
         System.out.println("Bienvenido al intérprete de Lisp en Java.");
         Scanner scanner = new Scanner(System.in);
         ExecutionContext context = new ExecutionContext();
+        context.set("T", true);
 
         while (true) {
             System.out.print("\nIngrese una expresión Lisp (o 'salir' para terminar): ");
