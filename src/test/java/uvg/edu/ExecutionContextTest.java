@@ -10,4 +10,10 @@ public class ExecutionContextTest {
         context.set("x", 42);
         assertEquals(42, context.get("x"));
     }
+
+    @Test
+    void testVariableNotFound() {
+        ExecutionContext context = new ExecutionContext();
+        assertNull(context.get("nonExistentVar"));
+    }
 }

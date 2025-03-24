@@ -14,4 +14,14 @@ public class LispParserTest {
         Object result = parser.parse();
         assertEquals(3, result);
     }
+
+    @Test
+    void testParseNestedExpression() {
+        LispTokenizer tokenizer = new LispTokenizer("(+ 1 (* 2 3))");
+        List<Token> tokens = tokenizer.tokenize();
+        ExecutionContext context = new ExecutionContext();
+        LispParser parser = new LispParser(tokens, context);
+        Object result = parser.parse();
+        assertEquals(7, result);
+    }
 }
