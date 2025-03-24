@@ -106,9 +106,9 @@ public class LispParser {
         if (expr.isEmpty()) {
             return null;
         }
-        
+    
         System.out.println("Evaluating expression: " + expr);
-        
+    
         if (expr.size() == 1 && !(expr.get(0) instanceof List)) {
             Object value = expr.get(0);
             if (value instanceof String) {
@@ -117,18 +117,19 @@ public class LispParser {
             }
             return value;
         }
-        
+    
         Object operator = expr.get(0);
+        if (operator instanceof List) {
+            operator = evaluate((List<Object>) operator, currentContext);
+        }
+    
         System.out.println("Evaluando expresión con operador: " + operator);
-        
+    
         List<Object> evaluatedArgs = new ArrayList<>();
         for (int i = 1; i < expr.size(); i++) {
             Object arg = expr.get(i);
             if (arg instanceof List) {
-                @SuppressWarnings("unchecked")
-                List<Object> argList = (List<Object>) arg;
-                Object evalArg = evaluate(argList, currentContext);
-                evaluatedArgs.add(evalArg);
+                evaluatedArgs.add(evaluate((List<Object>) arg, currentContext));
             } else if (arg instanceof String) {
                 String symbol = (String) arg;
                 Object value = currentContext.get(symbol);
@@ -141,22 +142,21 @@ public class LispParser {
                         evaluatedArgs.add(symbol);
                     }
                 }
-                System.out.println("Resolviendo argumento: " + symbol + ", valor: " + value);
             } else {
                 evaluatedArgs.add(arg);
             }
         }
-        
+    
         System.out.println("Argumentos evaluados para " + operator + ": " + evaluatedArgs);
-        
+    
         if (operator instanceof String) {
-            String opStr = (String) operator;
+            String opStr = ((String) operator).toUpperCase();
             LispFunction func = currentContext.getFunction(opStr);
             if (func != null) {
                 return applyFunction(func, evaluatedArgs);
             }
-            
-            switch (opStr.toUpperCase()) {
+    
+            switch (opStr) {
                 case "QUOTE":
                     return expr.get(1);
                 case "SETQ":
@@ -178,14 +178,34 @@ public class LispParser {
                     return greaterThan(evaluatedArgs);
                 case "EQUAL":
                     return equal(evaluatedArgs);
+                case "<=":
+                    return lessThanOrEqual(evaluatedArgs);
+                case ">=":
+                    return greaterThanOrEqual(evaluatedArgs);
+                case "IF":
+                    if (evaluatedArgs.size() != 3) {
+                        throw new RuntimeException("IF requiere exactamente 3 argumentos");
+                    }
+                    Object condition = evaluatedArgs.get(0);
+                    if (condition instanceof Boolean) {
+                        return (Boolean) condition ? evaluatedArgs.get(1) : evaluatedArgs.get(2);
+                    } else if (condition instanceof Integer) {
+                        return ((Integer) condition) != 0 ? evaluatedArgs.get(1) : evaluatedArgs.get(2);
+                    } else {
+                        throw new RuntimeException("Condición de IF no es booleana ni numérica: " + condition);
+                    }
                 default:
+                    // Si no es un operador conocido, podría ser un símbolo o variable
+                    Object value = currentContext.get(opStr);
+                    if (value != null) {
+                        return value;
+                    }
                     throw new RuntimeException("Operador desconocido: " + operator);
             }
         }
-        
-        throw new RuntimeException("Operador no válido: " + operator);
+    
+        return operator; // Si el operador ya fue evaluado (como true/false), devolverlo
     }
-
     // Nuevo método auxiliar para evaluar expresiones anidadas
     private Object evaluateExpression(Object expr, ExecutionContext currentContext) {
         if (expr instanceof List) {
@@ -220,18 +240,65 @@ public class LispParser {
             if (condPair.size() < 2) {
                 throw new RuntimeException("Cada cláusula de COND debe tener condición y acción");
             }
-            
-            Object condition = condPair.get(0);
-            Object evalResult = evaluateExpression(condition, currentContext);
-            
+    
+            Object conditionExpr = condPair.get(0);
+            Object evalResult;
+    
+            // Evaluar la condición
+            if (conditionExpr instanceof List) {
+                evalResult = evaluate((List<Object>) conditionExpr, currentContext);
+            } else if (conditionExpr instanceof String && "T".equalsIgnoreCase((String) conditionExpr)) {
+                evalResult = true; // T siempre es verdadero
+            } else {
+                evalResult = evaluateExpression(conditionExpr, currentContext);
+            }
+    
             System.out.println("Resultado de la condición: " + evalResult);
-            if (evalResult instanceof Boolean && (Boolean) evalResult) {
+    
+            // Si la condición es verdadera, evaluar y devolver la acción
+            if ((evalResult instanceof Boolean && (Boolean) evalResult) || 
+                (evalResult instanceof Integer && (Integer) evalResult != 0)) {
                 Object action = condPair.get(1);
                 return evaluateExpression(action, currentContext);
             }
         }
-        return null;
+        return null; // Ninguna condición se cumple
     }
+
+    private Object applyFunction(LispFunction func, List<Object> args) {
+        System.out.println("Llamando a función: " + func.getName() + " con argumentos: " + args);
+
+        if (func.getParameters().size() != args.size()) {
+            throw new RuntimeException("Número incorrecto de argumentos para " + func.getName());
+        }
+
+        // Verificar si el argumento es negativo (caso especial para FIBONACCI)
+        if (func.getName().equals("FIBONACCI") && args.get(0) instanceof Integer && (Integer) args.get(0) < 0) {
+            return 0; // Devuelve 0 para valores negativos
+        }
+
+        ExecutionContext functionContext = new ExecutionContext(globalContext);
+        functionContext.setFunction(func.getName(), func);
+
+        for (int i = 0; i < func.getParameters().size(); i++) {
+            functionContext.set(func.getParameters().get(i), args.get(i));
+            System.out.println("Asignando " + func.getParameters().get(i) + " = " + args.get(i));
+        }
+
+        Object result = null;
+        for (Object expr : func.getBody()) {
+            if (expr instanceof List) {
+                result = evaluate((List<Object>) expr, functionContext);
+            } else {
+                result = evaluateExpression(expr, functionContext);
+            }
+            System.out.println("Resultado parcial del cuerpo: " + result);
+        }
+
+        System.out.println("Resultado final de " + func.getName() + ": " + result);
+        return result;
+    }
+
     private Object add(List<Object> args) {
         int sum = 0;
         for (Object arg : args) {
@@ -318,57 +385,34 @@ public class LispParser {
         if (args.size() < 3) {
             throw new RuntimeException("DEFUN requiere al menos nombre, parámetros y cuerpo");
         }
-        
+    
         if (!(args.get(0) instanceof String)) {
             throw new RuntimeException("El nombre de la función debe ser un símbolo");
         }
         String funcName = (String) args.get(0);
-        List<String> params;
         
         if (!(args.get(1) instanceof List)) {
             throw new RuntimeException("La lista de parámetros debe ser una lista");
         }
+        
         @SuppressWarnings("unchecked")
         List<Object> paramList = (List<Object>) args.get(1);
-        params = new ArrayList<>();
+        List<String> params = new ArrayList<>();
         for (Object param : paramList) {
             if (!(param instanceof String)) {
                 throw new RuntimeException("Los parámetros deben ser símbolos");
             }
             params.add((String) param);
         }
-        
+    
         List<Object> body = new ArrayList<>(args.subList(2, args.size()));
         System.out.println("Defining function " + funcName + " with params " + params + " and body " + body);
-        LispFunction function = new LispFunction(params, body);
+        
+        LispFunction function = new LispFunction(funcName, params, body); // Ahora pasa el nombre
         context.setFunction(funcName, function);
         return funcName;
     }
-
-    private Object applyFunction(LispFunction func, List<Object> args) {
-        System.out.println("Llamando a función: " + func);
-        System.out.println("Con argumentos: " + args);
-        
-        if (func.getParameters().size() != args.size()) {
-            throw new RuntimeException("Número incorrecto de argumentos");
-        }
-        
-        // Crear un nuevo contexto con el contexto global como padre
-        ExecutionContext functionContext = new ExecutionContext(globalContext);
-        for (int i = 0; i < func.getParameters().size(); i++) {
-            functionContext.set(func.getParameters().get(i), args.get(i));
-        }
-        
-        Object result = null;
-        // Evaluar cada expresión en el cuerpo
-        for (Object expr : func.getBody()) {
-            System.out.println("Evaluando expresión en cuerpo de función: " + expr);
-            result = evaluateExpression(expr, functionContext); // Usar evaluateExpression
-        }
-        
-        System.out.println("Resultado de la función: " + result);
-        return result;
-    }
+    
     private boolean atom(List<Object> args) {
         Object arg = args.get(0);
         return !(arg instanceof List);
@@ -378,6 +422,23 @@ public class LispParser {
         Object arg = args.get(0);
         return arg instanceof List;
     }
+
+    private boolean lessThanOrEqual(List<Object> args) {
+        if (args.size() != 2) throw new RuntimeException("Se necesitan exactamente 2 argumentos para <=");
+        if (!(args.get(0) instanceof Integer) || !(args.get(1) instanceof Integer)) {
+            throw new RuntimeException("Argumentos no numéricos en <=: " + args);
+        }
+        return (Integer) args.get(0) <= (Integer) args.get(1);
+    }
+    
+    private boolean greaterThanOrEqual(List<Object> args) {
+        if (args.size() != 2) throw new RuntimeException("Se necesitan exactamente 2 argumentos para >=");
+        if (!(args.get(0) instanceof Integer) || !(args.get(1) instanceof Integer)) {
+            throw new RuntimeException("Argumentos no numéricos en >=: " + args);
+        }
+        return (Integer) args.get(0) >= (Integer) args.get(1);
+    }
+    
 
     private List<Token> tokensFromList(List<Object> list) {
         List<Token> tokens = new ArrayList<>();

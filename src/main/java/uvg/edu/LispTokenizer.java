@@ -16,6 +16,7 @@ public class LispTokenizer {
         List<Token> tokens = new ArrayList<>();
         while (position < input.length()) {
             char current = input.charAt(position);
+            
             if (Character.isWhitespace(current)) {
                 position++;
             } else if (current == '(') {
@@ -27,11 +28,18 @@ public class LispTokenizer {
             } else if (current == '\'') {
                 tokens.add(new Token(TokenType.QUOTE, "'"));
                 position++;
-            } else if (current == '"') { // aquí añadí para las cadenas de texto
+            } else if (current == '"') { 
                 tokens.add(readString());
             } else if (Character.isDigit(current) || (current == '-' && peekNextIsDigit())) {
                 tokens.add(readNumber());
-            } else if (Character.isLetter(current) || "+-*/<>".indexOf(current) != -1) {
+            } 
+            // Manejo de operadores <= y >= antes de leer símbolos normales
+            else if ((current == '<' || current == '>') && position + 1 < input.length() && input.charAt(position + 1) == '=') {
+                tokens.add(new Token(TokenType.SYMBOL, Character.toString(current) + "="));
+                position += 2; // Saltamos dos posiciones
+            } 
+            // Manejo de símbolos normales
+            else if (Character.isLetter(current) || "+-*/<>".indexOf(current) != -1) {
                 tokens.add(readSymbol());
             } else {
                 throw new RuntimeException("Carácter inesperado: " + current);
@@ -40,6 +48,7 @@ public class LispTokenizer {
         tokens.add(new Token(TokenType.EOF, ""));
         return tokens;
     }
+    
 
     private boolean peekNextIsDigit() {
         return position + 1 < input.length() && Character.isDigit(input.charAt(position + 1));
