@@ -7,11 +7,12 @@ public class LispParser {
     private final List<Token> tokens;
     private int position;
     private final ExecutionContext context;
+    private final ExecutionContext globalContext;
 
     public LispParser(List<Token> tokens, ExecutionContext context) {
         this.tokens = tokens;
-        this.position = 0;
         this.context = context;
+        this.globalContext = context;
     }
 
     public Object parse() {
@@ -78,7 +79,7 @@ public class LispParser {
             }
             
             System.out.println("Evaluating expression: " + expression);
-            return evaluate(expression);
+            return evaluate(expression, context);
         } else if (token.getType() == TokenType.SYMBOL) {
             String symbol = token.getValue();
             if (insideDefun) {
@@ -101,7 +102,7 @@ public class LispParser {
         return null;
     }
 
-    private Object evaluate(List<Object> expression) {
+    private Object evaluate(List<Object> expression, ExecutionContext currentContext) {
         if (expression.isEmpty()) return null;
     
         Object operator = expression.get(0);
@@ -117,18 +118,18 @@ public class LispParser {
                 if (arg instanceof List) {
                     @SuppressWarnings("unchecked")
                     List<Object> argList = (List<Object>) arg;
-                    LispParser argParser = new LispParser(tokensFromList(argList), context);
+                    LispParser argParser = new LispParser(tokensFromList(argList), currentContext);
                     Object parsedArg = argParser.parse();
                     if (parsedArg instanceof List) {
                         @SuppressWarnings("unchecked")
                         List<Object> parsedList = (List<Object>) parsedArg;
-                        evaluatedArgs.add(evaluate(parsedList));
+                        evaluatedArgs.add(evaluate(parsedList, currentContext));
                     } else {
                         evaluatedArgs.add(parsedArg);
                     }
                 } else if (arg instanceof String) {
                     String argStr = (String) arg;
-                    Object value = context.get(argStr);
+                    Object value = currentContext.get(argStr);
                     System.out.println("Resolviendo argumento: " + argStr + ", valor: " + value);
                     evaluatedArgs.add(value != null ? value : argStr);
                 } else {
@@ -145,13 +146,12 @@ public class LispParser {
                 case "/": return divide(evaluatedArgs);
                 case "QUOTE": return evaluatedArgs.get(0);
                 case "SETQ": return setq(evaluatedArgs);
-                case "PRINT": return print(evaluatedArgs);
                 case "ATOM": return atom(evaluatedArgs);
                 case "LIST": return list(evaluatedArgs);
                 case "EQUAL": return equal(evaluatedArgs);
                 case "<": return lessThan(evaluatedArgs);
                 case ">": return greaterThan(evaluatedArgs);
-                case "COND": return cond(args); // Usar args sin evaluar para COND
+                case "COND": return cond(args, currentContext); // Usar args sin evaluar para COND
                 default:
                     LispFunction func = context.getFunction(op);
                     if (func != null) {
@@ -235,50 +235,34 @@ public class LispParser {
     }
 
     private Object applyFunction(LispFunction func, List<Object> args) {
-        // Verificar que el número de argumentos sea correcto
+        System.out.println("Llamando a función: " + func);
+        System.out.println("Con argumentos: " + args);
+        
         if (func.getParameters().size() != args.size()) {
             throw new RuntimeException("Número incorrecto de argumentos");
         }
     
-        // Crear un nuevo contexto para la ejecución de la función
-        ExecutionContext functionContext = new ExecutionContext(context);
+        ExecutionContext functionContext = new ExecutionContext(globalContext); // Contexto con padre global
+        
         for (int i = 0; i < func.getParameters().size(); i++) {
-            Object arg = args.get(i);
-            functionContext.set(func.getParameters().get(i), arg); // Asignar argumentos a parámetros
+            functionContext.set(func.getParameters().get(i), args.get(i));
         }
     
-        List<Object> body = func.getBody(); // Obtener el cuerpo de la función
         Object result = null;
-    
-        // Evaluar cada expresión en el cuerpo
-        for (Object expr : body) {
-            if (expr instanceof List) { // Si es una lista (como (COND ...) o (FACTORIAL ...))
+        for (Object expr : func.getBody()) {
+            System.out.println("Evaluando expresión en cuerpo de función: " + expr);
+            
+            if (expr instanceof List) {
                 List<Object> exprList = (List<Object>) expr;
-                // Convertir la lista en una expresión LISP completa con paréntesis
-                List<Token> tokens = tokensFromList(exprList);
-                tokens.add(0, new Token(TokenType.LPAREN, "("));
-                tokens.add(new Token(TokenType.RPAREN, ")"));
-    
-                // Parsear y evaluar la subexpresión recursivamente
-                LispParser bodyParser = new LispParser(tokens, functionContext);
-                result = bodyParser.parse(false); // Evaluar completamente
-            } else if (expr instanceof String) { // Si es un símbolo
-                String symbol = (String) expr;
-                result = functionContext.get(symbol); // Resolver variable en el contexto
-                if (result == null) result = symbol; // Si no está definida, devolver el símbolo
-            } else { // Si es un valor literal (como un número)
+                result = evaluate(exprList, functionContext);  // Evaluar la expresión con el contexto correcto
+            } else {
                 result = expr;
             }
         }
     
+        System.out.println("Resultado de la función: " + result);
         return result;
-    }
-    
-    private Object print(List<Object> args) {
-        Object value = args.get(0);
-        System.out.println(value);
-        return value;
-    }
+    }    
 
     private boolean atom(List<Object> args) {
         Object arg = args.get(0);
@@ -291,8 +275,19 @@ public class LispParser {
     }
 
     private boolean equal(List<Object> args) {
-        return args.get(0).equals(args.get(1));
+        System.out.println("Comparando EQUAL: " + args);
+        if (args.size() < 2) {
+            throw new RuntimeException("EQUAL requiere dos argumentos.");
+        }
+    
+        Object a = args.get(0);
+        Object b = args.get(1);
+    
+        System.out.println("Comparando " + a + " con " + b);
+        
+        return a.equals(b);
     }
+    
 
     private boolean lessThan(List<Object> args) {
         return (Integer) args.get(0) < (Integer) args.get(1);
@@ -302,41 +297,38 @@ public class LispParser {
         return (Integer) args.get(0) > (Integer) args.get(1);
     }
 
-    private Object cond(List<Object> args) {
+    private Object cond(List<Object> args, ExecutionContext currentContext) {
         System.out.println("Evaluando COND con cláusulas: " + args);
         for (Object clause : args) {
             if (!(clause instanceof List)) {
                 throw new RuntimeException("Debe ser lista...");
             }
-    
             @SuppressWarnings("unchecked")
             List<Object> condPair = (List<Object>) clause;
             if (condPair.size() < 2) {
                 throw new RuntimeException("Se necesita una condición y el resultado");
             }
-    
-            Object condition = condPair.get(0);
-            System.out.println("Evaluando condición: " + condition);
-    
+        
+            // Evaluar la condición usando currentContext en lugar de 'context'
             Object evalResult;
-            if (condition instanceof List) {
+            if (condPair.get(0) instanceof List) {
                 @SuppressWarnings("unchecked")
-                List<Object> conditionList = (List<Object>) condition;
-                LispParser conditionParser = new LispParser(tokensFromList(conditionList), context);
+                List<Object> conditionList = (List<Object>) condPair.get(0);
+                LispParser conditionParser = new LispParser(tokensFromList(conditionList), currentContext);
                 Object parsedCondition = conditionParser.parse();
-                if (parsedCondition instanceof List) {
+                if (parsedCondition instanceof List<?>) {
                     @SuppressWarnings("unchecked")
-                    List<Object> parsedConditionList = (List<Object>) parsedCondition;
-                    evalResult = evaluate(parsedConditionList);
+                    List<Object> parsedList = (List<Object>) parsedCondition;
+                    evalResult = evaluate(parsedList, currentContext);
                 } else {
                     evalResult = parsedCondition;
                 }
-            } else if (condition instanceof String && ((String) condition).equalsIgnoreCase("T")) {
+            } else if (condPair.get(0) instanceof String && ((String) condPair.get(0)).equalsIgnoreCase("T")) {
                 evalResult = true;
             } else {
-                evalResult = condition; // Si no es lista ni "T", tratar como valor directo
+                evalResult = condPair.get(0);
             }
-    
+        
             System.out.println("Resultado de la condición: " + evalResult);
             if (evalResult instanceof Boolean && (Boolean) evalResult) {
                 Object action = condPair.get(1);
@@ -344,21 +336,19 @@ public class LispParser {
                     @SuppressWarnings("unchecked")
                     List<Object> actionList = (List<Object>) action;
                     System.out.println("La condición es verdadera, evaluando acción: " + actionList);
-                    LispParser actionParser = new LispParser(tokensFromList(actionList), context);
+                    LispParser actionParser = new LispParser(tokensFromList(actionList), currentContext);
                     Object parsedAction = actionParser.parse();
-                    if (parsedAction instanceof List) {
-                        @SuppressWarnings("unchecked")
-                        List<Object> parsedActionList = (List<Object>) parsedAction;
-                        return evaluate(parsedActionList);
-                    }
-                    return parsedAction;
+                    return parsedAction instanceof List ? evaluate((List<Object>) parsedAction, currentContext) : parsedAction;
                 }
                 System.out.println("La condición es verdadera, devolviendo acción: " + action);
-                return action; // Devolver valores directos como 1
+                return action;
             }
         }
         return null; // Si no se cumple ninguna condición
     }
+    
+
+    
     private List<Token> tokensFromList(List<Object> list) {
         List<Token> tokens = new ArrayList<>();
         for (Object obj : list) {

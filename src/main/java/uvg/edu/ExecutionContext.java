@@ -24,18 +24,20 @@ public class ExecutionContext {
     }
 
     public Object get(String key) {
-        if (variables.containsKey(key)) {
-            Object value = variables.get(key);
-            System.out.println("Variable encontrada en contexto actual: " + key + " = " + value);
-            return value;
-        }
-        if (parentContext != null) {
+        ExecutionContext current = this;
+        while (current != null) {
+            if (current.variables.containsKey(key)) {
+                Object value = current.variables.get(key);
+                System.out.println("Variable encontrada en contexto actual: " + key + " = " + value);
+                return value;
+            }
             System.out.println("Buscando " + key + " en contexto padre...");
-            return parentContext.get(key);
+            current = current.parentContext;
         }
         System.out.println("Variable no encontrada: " + key);
-        return null; // Si no hay padre y no está en el contexto actual, devolver null
+        return null;
     }
+    
 
     public void setFunction(String key, LispFunction function) {
         System.out.println("Estableciendo función en contexto: " + key);
@@ -43,18 +45,20 @@ public class ExecutionContext {
     }
 
     public LispFunction getFunction(String key) {
-        if (functions.containsKey(key)) {
-            LispFunction func = functions.get(key);
-            System.out.println("Función encontrada en contexto actual: " + key);
-            return func;
-        }
-        if (parentContext != null) {
+        ExecutionContext current = this;
+        while (current != null) {
+            if (current.functions.containsKey(key)) {
+                LispFunction func = current.functions.get(key);
+                System.out.println("Función encontrada en contexto actual: " + key);
+                return func;
+            }
             System.out.println("Buscando función " + key + " en contexto padre...");
-            return parentContext.getFunction(key);
+            current = current.parentContext;
         }
         System.out.println("Función no encontrada: " + key);
-        return null; // Si no hay padre y no está en el contexto actual, devolver null
+        return null;
     }
+    
 
     public List<String> getAllFunctionNames() {
         List<String> names = new ArrayList<>(functions.keySet());
