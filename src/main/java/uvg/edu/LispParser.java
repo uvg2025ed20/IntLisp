@@ -21,7 +21,7 @@ public class LispParser {
         this.context = context;
         this.functions = new FunctionInterpreter(context);
         this.variables = new VariableInterpreter(context);
-        this.conditionals = new ConditionalInterpreter(); // Sin contexto en el constructor
+        this.conditionals = new ConditionalInterpreter();
         this.position = 0;
     }
 
@@ -30,23 +30,16 @@ public class LispParser {
             return null;
         }
         Token token = tokens.get(position++);
-        System.out.println("Parsing token: " + token);
 
         if (token.getType() == TokenType.LPAREN) {
             List<Object> expression = new ArrayList<>();
-            
             while (position < tokens.size() && tokens.get(position).getType() != TokenType.RPAREN) {
-                Object subExpr = parse();
-                System.out.println("Parsed subexpression: " + subExpr);
-                expression.add(subExpr);
+                expression.add(parse());
             }
-            
             if (position >= tokens.size()) {
                 throw new RuntimeException("Missing closing parenthesis");
             }
             position++; // Consume RPAREN
-            System.out.println("Completed expression: " + expression);
-            
             return expression;
         } else if (token.getType() == TokenType.QUOTE) {
             List<Object> expression = new ArrayList<>();
@@ -56,7 +49,6 @@ public class LispParser {
                 throw new RuntimeException("Nothing to quote after '");
             }
             expression.add(quotedExpr);
-            System.out.println("Completed quoted expression: " + expression);
             return expression;
         } else if (token.getType() == TokenType.NUMBER) {
             return Integer.parseInt(token.getValue());
@@ -80,13 +72,12 @@ public class LispParser {
         List<Object> args = new ArrayList<>();
         for (int i = 1; i < expr.size(); i++) {
             Object arg = expr.get(i);
-            System.out.println("Processing argument: " + arg + " for operator: " + operator);
-            if (operator instanceof String && 
-                ("ATOM".equalsIgnoreCase((String)operator) || 
-                 "LIST".equalsIgnoreCase((String)operator) || 
-                 "QUOTE".equalsIgnoreCase((String)operator) || 
-                 "DEFUN".equalsIgnoreCase((String)operator) || 
-                 "COND".equalsIgnoreCase((String)operator))) {
+            if (operator instanceof String && (
+                "ATOM".equalsIgnoreCase((String)operator) || 
+                "LIST".equalsIgnoreCase((String)operator) || 
+                "QUOTE".equalsIgnoreCase((String)operator) || 
+                "DEFUN".equalsIgnoreCase((String)operator) || 
+                "COND".equalsIgnoreCase((String)operator))) {
                 args.add(arg);
             } else if (arg instanceof List) {
                 args.add(evaluate((List<Object>) arg, currentContext));
@@ -97,7 +88,6 @@ public class LispParser {
                 args.add(arg);
             }
         }
-        System.out.println("Evaluated args: " + args);
 
         if (!(operator instanceof String)) {
             return operator;
@@ -117,13 +107,12 @@ public class LispParser {
             case "DEFUN":
                 return functions.interpret(args);
             case "COND":
-                return conditionals.interpret(args, this, currentContext); // Pasar currentContext
+                return conditionals.interpret(args, this, currentContext);
             case "PRINT":
                 return print.interpret(args);
             case "+": case "-": case "*": case "/":
                 return arithmetic.interpret(op, args);
             case "ATOM": case "LIST": case "EQUAL": case "<": case ">": case "<=": case ">=":
-                System.out.println("Calling predicate " + op + " with args: " + args);
                 return predicates.interpret(op, args);
             default:
                 Object value = currentContext.get(op);
