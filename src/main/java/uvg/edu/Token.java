@@ -1,24 +1,48 @@
 package uvg.edu;
 
-public class Token {
-    private final TokenType type;
-    private final String value;
+    /**
+     * The `Token` class represents a token in the Lisp interpreter, consisting of a type and a value.
+     */
+    public class Token {
+        private final TokenType type; // The type of the token
+        private final String value;   // The value of the token
 
-    public Token(TokenType type, String value) {
-        this.type = type;
-        this.value = value;
-    }
+        /**
+         * Constructs a `Token` with the specified type and value.
+         *
+         * @param type The type of the token.
+         * @param value The value of the token.
+         */
+        public Token(TokenType type, String value) {
+            this.type = type;
+            this.value = value;
+        }
 
-    public TokenType getType() {
-        return type;
-    }
+        /**
+         * Returns the type of the token.
+         *
+         * @return The type of the token.
+         */
+        public TokenType getType() {
+            return type;
+        }
 
-    public String getValue() {
-        return value;
-    }
+        /**
+         * Returns the value of the token.
+         *
+         * @return The value of the token.
+         */
+        public String getValue() {
+            return value;
+        }
 
-    @Override
-    public String toString() {
-        return "Token{" + " type=" + type + ", value='" + value + '\'' + '}';
+        /**
+         * Returns a string representation of the token.
+         *
+         * @return A string representation of the token.
+         */
+        @Override
+        public String toString() {
+            return "Token{" + " type=" + type + ", value='" + value + '\'' + '}';
+        }
     }
-}
