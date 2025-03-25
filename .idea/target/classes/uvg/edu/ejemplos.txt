@@ -1,0 +1,9 @@
+(DEFUN C-TO-F (C) (+ (/ (* C 9) 5) 32))
+(C-TO-F 0)
+(C-TO-F 100)
+
+(DEFUN FACT (N) (COND ((< N 2) 1) (T (* N (FACT (- N 1))))))
+(FACT 5)
+
+(DEFUN FIB (N) (COND ((< N 2) N) (T (+ (FIB (- N 1)) (FIB (- N 2))))))
+(FIB 6)
