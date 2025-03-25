@@ -2,459 +2,154 @@ package uvg.edu;
 
 import java.util.ArrayList;
 import java.util.List;
+import uvg.edu.interpreter.*;
 
 public class LispParser {
     private final List<Token> tokens;
     private int position;
     private final ExecutionContext context;
-    private final ExecutionContext globalContext;
+    private final ArithmeticInterpreter arithmetic = new ArithmeticInterpreter();
+    private final PredicateInterpreter predicates = new PredicateInterpreter();
+    private final FunctionInterpreter functions;
+    private final VariableInterpreter variables;
+    private final ConditionalInterpreter conditionals;
+    private final QuoteInterpreter quote = new QuoteInterpreter();
+    private final PrintInterpreter print = new PrintInterpreter();
 
     public LispParser(List<Token> tokens, ExecutionContext context) {
         this.tokens = tokens;
         this.context = context;
-        this.globalContext = context;
+        this.functions = new FunctionInterpreter(context);
+        this.variables = new VariableInterpreter(context);
+        this.conditionals = new ConditionalInterpreter(); // Sin contexto en el constructor
+        this.position = 0;
     }
 
     public Object parse() {
-        return parse(false); // Por defecto, no estamos dentro de DEFUN
-    }
-
-    private Object parse(boolean insideDefun) {
         if (position >= tokens.size()) {
-            System.out.println("Reached end of tokens at position: " + position);
             return null;
         }
         Token token = tokens.get(position++);
-        System.out.println("Parsing token at position " + (position - 1) + ": " + token);
-        
-        if (token.getType() == TokenType.QUOTE) {
-            Object quoted = parse(insideDefun);
-            System.out.println("Parsed QUOTE: " + quoted);
-            return quoted;
-        }
-        
+        System.out.println("Parsing token: " + token);
+
         if (token.getType() == TokenType.LPAREN) {
             List<Object> expression = new ArrayList<>();
-            boolean isDefun = false;
             
-            // Parsear el primer elemento para determinar si es DEFUN
-            if (position < tokens.size()) {
-                Token nextToken = tokens.get(position);
-                if (nextToken.getType() == TokenType.SYMBOL && nextToken.getValue().toUpperCase().equals("DEFUN")) {
-                    position++;
-                    expression.add(nextToken.getValue());
-                    isDefun = true;
-                    System.out.println("Detected DEFUN at position " + (position - 1));
-                }
-            }
-
-            // Si no es DEFUN, parsear el primer elemento normalmente
-            if (!isDefun && position < tokens.size() && tokens.get(position).getType() != TokenType.RPAREN) {
-                Object firstElement = parse(insideDefun);
-                expression.add(firstElement);
-                System.out.println("Parsed first element: " + firstElement);
-            }
-
-            // Parsear el resto de la lista
             while (position < tokens.size() && tokens.get(position).getType() != TokenType.RPAREN) {
-                Object subExpr = parse(isDefun || insideDefun); // Pasar el estado de DEFUN a las subexpresiones
-                expression.add(subExpr);
+                Object subExpr = parse();
                 System.out.println("Parsed subexpression: " + subExpr);
+                expression.add(subExpr);
             }
             
             if (position >= tokens.size()) {
                 throw new RuntimeException("Missing closing parenthesis");
             }
-            position++; // Consumir el RPAREN
-            System.out.println("Finished parsing list: " + expression);
+            position++; // Consume RPAREN
+            System.out.println("Completed expression: " + expression);
             
-            if (isDefun) {
-                System.out.println("Calling defun with args: " + expression.subList(1, expression.size()));
-                return defun(expression.subList(1, expression.size()));
+            return expression;
+        } else if (token.getType() == TokenType.QUOTE) {
+            List<Object> expression = new ArrayList<>();
+            expression.add("QUOTE");
+            Object quotedExpr = parse();
+            if (quotedExpr == null) {
+                throw new RuntimeException("Nothing to quote after '");
             }
-            
-            if (insideDefun) {
-                // Si estamos dentro de DEFUN, no evaluar la expresión, solo devolverla
-                return expression;
-            }
-            
-            System.out.println("Evaluating expression: " + expression);
-            return evaluate(expression, context);
-        } else if (token.getType() == TokenType.SYMBOL) {
-            String symbol = token.getValue();
-            if (insideDefun) {
-                // Si estamos dentro de DEFUN, no resolver el símbolo, solo devolverlo
-                System.out.println("Inside DEFUN, not resolving symbol: " + symbol);
-                return symbol;
-            }
-            Object value = context.get(symbol);
-            System.out.println("Resolving symbol: " + symbol + ", value: " + value);
-            if (value != null) {
-                return value; // Devolver el valor si es una variable en el contexto
-            }
-            // Si no es una variable, podría ser un operador o función
-            return symbol; // Esto permite que operadores como "+" lleguen a evaluate
+            expression.add(quotedExpr);
+            System.out.println("Completed quoted expression: " + expression);
+            return expression;
         } else if (token.getType() == TokenType.NUMBER) {
             return Integer.parseInt(token.getValue());
-        } else if (token.getType() == TokenType.STRING) { 
+        } else if (token.getType() == TokenType.STRING) {
+            return token.getValue();
+        } else if (token.getType() == TokenType.SYMBOL) {
             return token.getValue();
         }
         return null;
     }
 
-    private Object evaluate(List<Object> expr, ExecutionContext currentContext) {
-        if (expr.isEmpty()) {
-            return null;
-        }
-    
-        System.out.println("Evaluating expression: " + expr);
-    
-        if (expr.size() == 1 && !(expr.get(0) instanceof List)) {
-            Object value = expr.get(0);
-            if (value instanceof String) {
-                Object resolved = currentContext.get((String) value);
-                return resolved != null ? resolved : value;
-            }
-            return value;
-        }
-    
+    public Object evaluate(List<Object> expr, ExecutionContext currentContext) {
+        if (expr.isEmpty()) return null;
+        if (expr.size() == 1 && !(expr.get(0) instanceof List)) return expr.get(0);
+
         Object operator = expr.get(0);
         if (operator instanceof List) {
             operator = evaluate((List<Object>) operator, currentContext);
         }
-    
-        System.out.println("Evaluando expresión con operador: " + operator);
-    
-        List<Object> evaluatedArgs = new ArrayList<>();
+
+        List<Object> args = new ArrayList<>();
         for (int i = 1; i < expr.size(); i++) {
             Object arg = expr.get(i);
-            if (arg instanceof List) {
-                evaluatedArgs.add(evaluate((List<Object>) arg, currentContext));
+            System.out.println("Processing argument: " + arg + " for operator: " + operator);
+            if (operator instanceof String && 
+                ("ATOM".equalsIgnoreCase((String)operator) || 
+                 "LIST".equalsIgnoreCase((String)operator) || 
+                 "QUOTE".equalsIgnoreCase((String)operator) || 
+                 "DEFUN".equalsIgnoreCase((String)operator) || 
+                 "COND".equalsIgnoreCase((String)operator))) {
+                args.add(arg);
+            } else if (arg instanceof List) {
+                args.add(evaluate((List<Object>) arg, currentContext));
             } else if (arg instanceof String) {
-                String symbol = (String) arg;
-                Object value = currentContext.get(symbol);
-                if (value != null) {
-                    evaluatedArgs.add(value);
-                } else {
-                    try {
-                        evaluatedArgs.add(Integer.parseInt(symbol));
-                    } catch (NumberFormatException e) {
-                        evaluatedArgs.add(symbol);
-                    }
-                }
+                Object value = currentContext.get((String) arg);
+                args.add(value != null ? value : arg);
             } else {
-                evaluatedArgs.add(arg);
+                args.add(arg);
             }
         }
-    
-        System.out.println("Argumentos evaluados para " + operator + ": " + evaluatedArgs);
-    
-        if (operator instanceof String) {
-            String opStr = ((String) operator).toUpperCase();
-            LispFunction func = currentContext.getFunction(opStr);
-            if (func != null) {
-                return applyFunction(func, evaluatedArgs);
-            }
-    
-            switch (opStr) {
-                case "QUOTE":
-                    return expr.get(1);
-                case "SETQ":
-                    currentContext.set((String) expr.get(1), evaluatedArgs.get(1));
-                    return evaluatedArgs.get(1);
-                case "COND":
-                    return cond(expr.subList(1, expr.size()), currentContext);
-                case "+":
-                    return add(evaluatedArgs);
-                case "-":
-                    return subtract(evaluatedArgs);
-                case "*":
-                    return multiply(evaluatedArgs);
-                case "/":
-                    return divide(evaluatedArgs);
-                case "<":
-                    return lessThan(evaluatedArgs);
-                case ">":
-                    return greaterThan(evaluatedArgs);
-                case "EQUAL":
-                    return equal(evaluatedArgs);
-                case "<=":
-                    return lessThanOrEqual(evaluatedArgs);
-                case ">=":
-                    return greaterThanOrEqual(evaluatedArgs);
-                case "IF":
-                    if (evaluatedArgs.size() != 3) {
-                        throw new RuntimeException("IF requiere exactamente 3 argumentos");
-                    }
-                    Object condition = evaluatedArgs.get(0);
-                    if (condition instanceof Boolean) {
-                        return (Boolean) condition ? evaluatedArgs.get(1) : evaluatedArgs.get(2);
-                    } else if (condition instanceof Integer) {
-                        return ((Integer) condition) != 0 ? evaluatedArgs.get(1) : evaluatedArgs.get(2);
-                    } else {
-                        throw new RuntimeException("Condición de IF no es booleana ni numérica: " + condition);
-                    }
-                default:
-                    // Si no es un operador conocido, podría ser un símbolo o variable
-                    Object value = currentContext.get(opStr);
-                    if (value != null) {
-                        return value;
-                    }
-                    throw new RuntimeException("Operador desconocido: " + operator);
-            }
+        System.out.println("Evaluated args: " + args);
+
+        if (!(operator instanceof String)) {
+            return operator;
         }
-    
-        return operator; // Si el operador ya fue evaluado (como true/false), devolverlo
-    }
-    // Nuevo método auxiliar para evaluar expresiones anidadas
-    private Object evaluateExpression(Object expr, ExecutionContext currentContext) {
-        if (expr instanceof List) {
-            @SuppressWarnings("unchecked")
-            List<Object> exprList = (List<Object>) expr;
-            // Si la lista tiene un operador como "<", evaluar normalmente
-            if (!exprList.isEmpty() && exprList.get(0) instanceof String) {
-                return evaluate(exprList, currentContext);
-            }
-            // Si no, evaluar cada elemento (aunque no debería ocurrir en COND)
-            List<Object> result = new ArrayList<>();
-            for (Object subExpr : exprList) {
-                result.add(evaluateExpression(subExpr, currentContext));
-            }
-            return result;
-        } else if (expr instanceof String) {
-            String symbol = (String) expr;
-            Object value = currentContext.get(symbol);
-            return value != null ? value : symbol;
+
+        String op = ((String) operator).toUpperCase();
+        LispFunction func = currentContext.getFunction(op);
+        if (func != null) {
+            return applyFunction(func, args, currentContext);
         }
-        return expr; // Números o valores literales
+
+        switch (op) {
+            case "QUOTE":
+                return quote.interpret(args);
+            case "SETQ":
+                return variables.interpret(args);
+            case "DEFUN":
+                return functions.interpret(args);
+            case "COND":
+                return conditionals.interpret(args, this, currentContext); // Pasar currentContext
+            case "PRINT":
+                return print.interpret(args);
+            case "+": case "-": case "*": case "/":
+                return arithmetic.interpret(op, args);
+            case "ATOM": case "LIST": case "EQUAL": case "<": case ">": case "<=": case ">=":
+                System.out.println("Calling predicate " + op + " with args: " + args);
+                return predicates.interpret(op, args);
+            default:
+                Object value = currentContext.get(op);
+                if (value != null) return value;
+                throw new RuntimeException("Unknown operator: " + operator);
+        }
     }
 
-    private Object cond(List<Object> args, ExecutionContext currentContext) {
-        System.out.println("Evaluando COND con cláusulas: " + args);
-        for (Object clause : args) {
-            if (!(clause instanceof List)) {
-                throw new RuntimeException("Cada cláusula de COND debe ser una lista");
-            }
-            @SuppressWarnings("unchecked")
-            List<Object> condPair = (List<Object>) clause;
-            if (condPair.size() < 2) {
-                throw new RuntimeException("Cada cláusula de COND debe tener condición y acción");
-            }
-    
-            Object conditionExpr = condPair.get(0);
-            Object evalResult;
-    
-            // Evaluar la condición
-            if (conditionExpr instanceof List) {
-                evalResult = evaluate((List<Object>) conditionExpr, currentContext);
-            } else if (conditionExpr instanceof String && "T".equalsIgnoreCase((String) conditionExpr)) {
-                evalResult = true; // T siempre es verdadero
-            } else {
-                evalResult = evaluateExpression(conditionExpr, currentContext);
-            }
-    
-            System.out.println("Resultado de la condición: " + evalResult);
-    
-            // Si la condición es verdadera, evaluar y devolver la acción
-            if ((evalResult instanceof Boolean && (Boolean) evalResult) || 
-                (evalResult instanceof Integer && (Integer) evalResult != 0)) {
-                Object action = condPair.get(1);
-                return evaluateExpression(action, currentContext);
-            }
-        }
-        return null; // Ninguna condición se cumple
-    }
-
-    private Object applyFunction(LispFunction func, List<Object> args) {
-        System.out.println("Llamando a función: " + func.getName() + " con argumentos: " + args);
-
+    private Object applyFunction(LispFunction func, List<Object> args, ExecutionContext parentContext) {
         if (func.getParameters().size() != args.size()) {
-            throw new RuntimeException("Número incorrecto de argumentos para " + func.getName());
+            throw new RuntimeException("Incorrect number of arguments for " + func.getName());
         }
 
-        // Verificar si el argumento es negativo (caso especial para FIBONACCI)
-        if (func.getName().equals("FIBONACCI") && args.get(0) instanceof Integer && (Integer) args.get(0) < 0) {
-            return 0; // Devuelve 0 para valores negativos
-        }
-
-        ExecutionContext functionContext = new ExecutionContext(globalContext);
-        functionContext.setFunction(func.getName(), func);
-
+        ExecutionContext funcContext = new ExecutionContext(parentContext);
         for (int i = 0; i < func.getParameters().size(); i++) {
-            functionContext.set(func.getParameters().get(i), args.get(i));
-            System.out.println("Asignando " + func.getParameters().get(i) + " = " + args.get(i));
+            funcContext.set(func.getParameters().get(i), args.get(i));
         }
 
         Object result = null;
         for (Object expr : func.getBody()) {
             if (expr instanceof List) {
-                result = evaluate((List<Object>) expr, functionContext);
+                result = evaluate((List<Object>) expr, funcContext);
             } else {
-                result = evaluateExpression(expr, functionContext);
-            }
-            System.out.println("Resultado parcial del cuerpo: " + result);
-        }
-
-        System.out.println("Resultado final de " + func.getName() + ": " + result);
-        return result;
-    }
-
-    private Object add(List<Object> args) {
-        int sum = 0;
-        for (Object arg : args) {
-            if (arg instanceof Integer) {
-                sum += (Integer) arg;
-            } else {
-                throw new RuntimeException("Argumento no numérico en +: " + arg);
-            }
-        }
-        return sum;
-    }
-    
-    private Object subtract(List<Object> args) {
-        if (args.isEmpty()) throw new RuntimeException("Se necesitan argumentos para -");
-        int result = (Integer) args.get(0);
-        for (int i = 1; i < args.size(); i++) {
-            if (args.get(i) instanceof Integer) {
-                result -= (Integer) args.get(i);
-            } else {
-                throw new RuntimeException("Argumento no numérico en -: " + args.get(i));
+                result = expr;
             }
         }
         return result;
-    }
-    
-    private boolean lessThan(List<Object> args) {
-        if (args.size() != 2) throw new RuntimeException("Se necesitan exactamente 2 argumentos para <");
-        if (!(args.get(0) instanceof Integer) || !(args.get(1) instanceof Integer)) {
-            throw new RuntimeException("Argumentos no numéricos en <: " + args);
-        }
-        return (Integer) args.get(0) < (Integer) args.get(1);
-    }
-    
-    private Object equal(List<Object> args) {
-        if (args.size() != 2) throw new RuntimeException("Se necesitan exactamente 2 argumentos para EQUAL");
-        return args.get(0).equals(args.get(1));
-    }
-
-    private int multiply(List<Object> args) {
-        int result = 1;
-        for (Object arg : args) {
-            if (arg instanceof Integer) {
-                result *= (Integer) arg;
-            } else {
-                throw new RuntimeException("Argumento no numérico en *: " + arg);
-            }
-        }
-        return result;
-    }
-
-    private int divide(List<Object> args) {
-        if (args.isEmpty()) throw new RuntimeException("Se necesitan argumentos para /");
-        int result = (Integer) args.get(0);
-        for (int i = 1; i < args.size(); i++) {
-            if (args.get(i) instanceof Integer) {
-                int divisor = (Integer) args.get(i);
-                if (divisor == 0) throw new RuntimeException("División por cero no permitida");
-                result /= divisor;
-            } else {
-                throw new RuntimeException("Argumento no numérico en /: " + args.get(i));
-            }
-        }
-        return result;
-    }
-
-    private boolean greaterThan(List<Object> args) {
-        if (args.size() != 2) throw new RuntimeException("Se necesitan exactamente 2 argumentos para >");
-        if (!(args.get(0) instanceof Integer) || !(args.get(1) instanceof Integer)) {
-            throw new RuntimeException("Argumentos no numéricos en >: " + args);
-        }
-        return (Integer) args.get(0) > (Integer) args.get(1);
-    }
-    private Object setq(List<Object> args) {
-        if (!(args.get(0) instanceof String)) {
-            throw new RuntimeException("SETQ requiere un símbolo como primer argumento");
-        }
-        String varName = (String) args.get(0);
-        Object value = args.get(1);
-        context.set(varName, value);
-        return value;
-    }
-
-    private Object defun(List<Object> args) {
-        if (args.size() < 3) {
-            throw new RuntimeException("DEFUN requiere al menos nombre, parámetros y cuerpo");
-        }
-    
-        if (!(args.get(0) instanceof String)) {
-            throw new RuntimeException("El nombre de la función debe ser un símbolo");
-        }
-        String funcName = (String) args.get(0);
-        
-        if (!(args.get(1) instanceof List)) {
-            throw new RuntimeException("La lista de parámetros debe ser una lista");
-        }
-        
-        @SuppressWarnings("unchecked")
-        List<Object> paramList = (List<Object>) args.get(1);
-        List<String> params = new ArrayList<>();
-        for (Object param : paramList) {
-            if (!(param instanceof String)) {
-                throw new RuntimeException("Los parámetros deben ser símbolos");
-            }
-            params.add((String) param);
-        }
-    
-        List<Object> body = new ArrayList<>(args.subList(2, args.size()));
-        System.out.println("Defining function " + funcName + " with params " + params + " and body " + body);
-        
-        LispFunction function = new LispFunction(funcName, params, body); // Ahora pasa el nombre
-        context.setFunction(funcName, function);
-        return funcName;
-    }
-    
-    private boolean atom(List<Object> args) {
-        Object arg = args.get(0);
-        return !(arg instanceof List);
-    }
-
-    private boolean list(List<Object> args) {
-        Object arg = args.get(0);
-        return arg instanceof List;
-    }
-
-    private boolean lessThanOrEqual(List<Object> args) {
-        if (args.size() != 2) throw new RuntimeException("Se necesitan exactamente 2 argumentos para <=");
-        if (!(args.get(0) instanceof Integer) || !(args.get(1) instanceof Integer)) {
-            throw new RuntimeException("Argumentos no numéricos en <=: " + args);
-        }
-        return (Integer) args.get(0) <= (Integer) args.get(1);
-    }
-    
-    private boolean greaterThanOrEqual(List<Object> args) {
-        if (args.size() != 2) throw new RuntimeException("Se necesitan exactamente 2 argumentos para >=");
-        if (!(args.get(0) instanceof Integer) || !(args.get(1) instanceof Integer)) {
-            throw new RuntimeException("Argumentos no numéricos en >=: " + args);
-        }
-        return (Integer) args.get(0) >= (Integer) args.get(1);
-    }
-    
-
-    private List<Token> tokensFromList(List<Object> list) {
-        List<Token> tokens = new ArrayList<>();
-        for (Object obj : list) {
-            if (obj instanceof Integer) {
-                tokens.add(new Token(TokenType.NUMBER, obj.toString()));
-            } else if (obj instanceof String) {
-                tokens.add(new Token(TokenType.SYMBOL, (String) obj));
-            } else if (obj instanceof List) {
-                tokens.add(new Token(TokenType.LPAREN, "("));
-                @SuppressWarnings("unchecked")
-                List<Object> nestedList = (List<Object>) obj;
-                tokens.addAll(tokensFromList(nestedList));
-                tokens.add(new Token(TokenType.RPAREN, ")"));
-            }
-        }
-        return tokens;
     }
 }

@@ -50,7 +50,13 @@ public class LispRunner {
         List<Token> tokens = tokenizer.tokenize();
 
         LispParser parser = new LispParser(tokens, context);
-        Object result = parser.parse();
+        Object parsed = parser.parse();
+        
+        // Evaluate the parsed result if it’s a list (i.e., an expression)
+        Object result = parsed;
+        if (parsed instanceof List) {
+            result = parser.evaluate((List<Object>) parsed, context);
+        }
 
         System.out.println("Resultado: " + result);
     }
